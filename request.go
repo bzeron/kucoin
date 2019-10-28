@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-type callRequest struct {
+type CallRequest struct {
 	time   time.Time
 	url    *url.URL
 	method string
@@ -18,12 +18,12 @@ type callRequest struct {
 	body   *bytes.Buffer
 }
 
-func NewCallRequest(method string, endpoint string, header http.Header, query url.Values, body interface{}) (call *callRequest, err error) {
-	call = &callRequest{
+func NewCallRequest(method string, endpoint string, header http.Header, query url.Values, body interface{}) (call *CallRequest, err error) {
+	call = &CallRequest{
 		time: time.Now(),
 		url: &url.URL{
 			Scheme:   "https",
-			Host:     "api.kucoin.com",
+			Host:     "api.kcs.top",
 			Path:     endpoint,
 			RawQuery: query.Encode(),
 		},
@@ -45,7 +45,7 @@ func NewCallRequest(method string, endpoint string, header http.Header, query ur
 	return
 }
 
-func (call *callRequest) request(s *sign) (request *http.Request, err error) {
+func (call *CallRequest) request(s *sign) (request *http.Request, err error) {
 	request, err = http.NewRequest(call.method, call.url.String(), call.body)
 	if err != nil {
 		return
@@ -57,7 +57,7 @@ func (call *callRequest) request(s *sign) (request *http.Request, err error) {
 	return
 }
 
-func (call *callRequest) Pagination(currentPage, pageSize int64) *callRequest {
+func (call *CallRequest) Pagination(currentPage, pageSize int64) *CallRequest {
 	query := call.url.Query()
 	query.Set("currentPage", strconv.FormatInt(currentPage, 10))
 	query.Set("pageSize", strconv.FormatInt(pageSize, 10))

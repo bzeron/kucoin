@@ -32,7 +32,7 @@ func newSign(key, secret, passphrase string) (s *sign, err error) {
 	return
 }
 
-func (s *sign) sign(call *callRequest) (err error) {
+func (s *sign) sign(call *CallRequest) (err error) {
 	call.header.Set("KC-API-KEY", s.key.String())
 	temp := new(bytes.Buffer)
 	_, err = temp.WriteString(strconv.FormatInt(call.time.UnixNano()/1e6, 10))
