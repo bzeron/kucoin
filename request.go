@@ -18,12 +18,12 @@ type CallRequest struct {
 	body   *bytes.Buffer
 }
 
-func NewCallRequest(method string, endpoint string, header http.Header, query url.Values, body interface{}) (call *CallRequest, err error) {
+func (c *Client) NewCallRequest(method string, endpoint string, header http.Header, query url.Values, body interface{}) (call *CallRequest, err error) {
 	call = &CallRequest{
 		time: time.Now(),
 		url: &url.URL{
-			Scheme:   "https",
-			Host:     "api.kcs.top",
+			Scheme:   c.endpoint.Scheme,
+			Host:     c.endpoint.Host,
 			Path:     endpoint,
 			RawQuery: query.Encode(),
 		},

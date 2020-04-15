@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 const (
@@ -35,7 +36,14 @@ func WithAuth(key, secret, passphrase string) func(client *Client) {
 	}
 }
 
+func WithEndpoint(endpoint string) func(client *Client) {
+	return func(client *Client) {
+		client.endpoint, _ = url.Parse(endpoint)
+	}
+}
+
 type Client struct {
+	endpoint   *url.URL
 	key        string
 	secret     string
 	passphrase string
@@ -46,6 +54,12 @@ func NewClient(options ...Option) (client *Client) {
 	client = &Client{}
 	for _, option := range options {
 		option(client)
+	}
+	if client.endpoint == nil {
+		client.endpoint = &url.URL{
+			Scheme: "https",
+			Host:   "api.kucoin.com",
+		}
 	}
 	return
 }
@@ -67,6 +81,7 @@ func (c *Client) Send(call *CallRequest) (buf *bytes.Buffer, err error) {
 	if err != nil {
 		return
 	}
+	defer func() { _ = response.Body.Close() }()
 	Logger.Infof("api response status code: %d", response.StatusCode)
 	if response.StatusCode != http.StatusOK {
 		err = fmt.Errorf("api response http error: [code:%d, message:%s]", response.StatusCode, http.StatusText(response.StatusCode))

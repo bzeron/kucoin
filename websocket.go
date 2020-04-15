@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/websocket"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -14,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 var (
@@ -41,6 +42,8 @@ const (
 	WebsocketPong    = "pong"
 	WebsocketAck     = "ack"
 	WebsocketMessage = "message"
+	WebsocketNotice  = "notice"
+	WebsocketCommand = "command"
 
 	WebsocketMessageSubscribe   = "subscribe"
 	WebsocketMessageUnsubscribe = "unsubscribe"
@@ -65,7 +68,7 @@ type (
 
 func (c *Client) token(endpoint string) (token Token, err error) {
 	var call *CallRequest
-	call, err = NewCallRequest(http.MethodPost, endpoint, nil, nil, nil)
+	call, err = c.NewCallRequest(http.MethodPost, endpoint, nil, nil, nil)
 	if err != nil {
 		return
 	}
@@ -88,11 +91,11 @@ func (c *Client) PrivateToken() (token Token, err error) {
 	return
 }
 
-func (token Token) ConnectToInstanceServer() (conn *WebsocketConn, err error) {
-	var instanceServer = token.InstanceServers[rand.Intn(len(token.InstanceServers))]
-	switch instanceServer.Protocol {
+func (token Token) ConnectToInstance() (conn *WebsocketConn, err error) {
+	var instance = token.InstanceServers[rand.Intn(len(token.InstanceServers))]
+	switch instance.Protocol {
 	case "websocket":
-		conn, err = NewConnect(instanceServer, token.Token)
+		conn, err = NewConnect(instance, token.Token)
 	default:
 		err = fmt.Errorf("protocol not support")
 	}
@@ -349,7 +352,7 @@ func (conn *WebsocketConn) read() (err error) {
 			case WebsocketAck:
 				go conn.cancelWait(conn.ack, resp.Id)
 				Logger.Infof("websocket received ack message: %s", resp.Id)
-			case WebsocketMessage:
+			case WebsocketMessage, WebsocketCommand, WebsocketNotice:
 				conn.r <- resp.Data
 			default:
 				err = fmt.Errorf("websocket received invalid message")
