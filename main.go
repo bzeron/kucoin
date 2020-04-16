@@ -47,8 +47,9 @@ func snapshot() (book *order_book.BookL3, err error) {
 }
 
 func printBook(book *order_book.BookL2) {
-	fmt.Print("\033[H\033[2J")
-	asks, bids := book.Object(10)
+	level := 10
+	fmt.Printf("\033[%dA", level*2+1)
+	asks, bids := book.Object(level)
 	for _, v := range asks {
 		fmt.Println(v)
 	}
@@ -76,6 +77,7 @@ func main() {
 		panic(err)
 	}
 	go func() {
+		fmt.Print("\033[H\033[2J")
 		for {
 			printBook(book.ToL2())
 			time.Sleep(time.Second / 10)
