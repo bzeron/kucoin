@@ -19,8 +19,8 @@ import (
 
 var (
 	WebsocketErrorSize = 1
-	WebsocketReadSize  = 1 << 5
-	WebsocketWriteSize = 1 << 5
+	WebsocketReadSize  = 1 << 8
+	WebsocketWriteSize = 1 << 8
 
 	WebsocketAckTimeout = time.Second * time.Duration(5)
 
