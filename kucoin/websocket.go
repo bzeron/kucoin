@@ -148,7 +148,6 @@ func NewConnect(server InstanceServer, token string) (conn *WebsocketConn, err e
 	query.Set("connectId", strconv.FormatInt(time.Now().UnixNano(), 10))
 	query.Set("token", token)
 	uri.RawQuery = query.Encode()
-	Logger.Infof("websocket server url: %s", uri.String())
 	conn = &WebsocketConn{
 		srv: server,
 		pp:  new(sync.Map),
@@ -177,40 +176,34 @@ func NewConnect(server InstanceServer, token string) (conn *WebsocketConn, err e
 	}
 	conn.ctx, conn.cancel = context.WithCancel(context.Background())
 	go func() {
-		Logger.Info("websocket start heartbeat goroutine")
 		err = conn.heartbeat()
 		if err != nil {
 			conn.err <- err
 		}
 	}()
 	go func() {
-		Logger.Info("websocket start write goroutine")
 		err = conn.write()
 		if err != nil {
 			conn.err <- err
 		}
 	}()
 	go func() {
-		Logger.Info("websocket start read goroutine")
 		err = conn.read()
 		if err != nil {
 			conn.err <- err
 		}
 	}()
-
 	return
 }
 
 func (conn *WebsocketConn) Close() (err error) {
 	if !conn.Closed() {
-		Logger.Info("websocket client closing")
 		atomic.SwapInt32(&conn.close, 1)
 		conn.cancel()
 		close(conn.err)
 		close(conn.r)
 		close(conn.w)
 		err = conn.conn.Close()
-		Logger.Info("websocket client closed")
 	}
 	return
 }
@@ -226,9 +219,7 @@ func (conn *WebsocketConn) wait(pool *sync.Map, id string, t time.Duration) (err
 	defer pool.Delete(id)
 	select {
 	case <-wait:
-		Logger.Infof("websocket waited ack: %s", id)
 	case <-time.After(t):
-		Logger.Infof("websocket waited ack: %s, timeout: %s", id, t)
 		err = fmt.Errorf("websocket waited ack: %s, timeout: %s", id, t)
 	}
 	return
@@ -240,7 +231,6 @@ func (conn *WebsocketConn) cancelWait(pool *sync.Map, id string) {
 		return
 	}
 	wait.(chan struct{}) <- struct{}{}
-	Logger.Infof("websocket cancel ack: %s", id)
 	return
 }
 
@@ -315,9 +305,7 @@ func (conn *WebsocketConn) heartbeat() (err error) {
 		case <-pt.C:
 			ping.Id = strconv.FormatInt(time.Now().UnixNano(), 10)
 			conn.w <- ping
-			Logger.Infof("websocket send ping: %s", ping.Id)
 			err = conn.wait(conn.pp, ping.Id, time.Duration(conn.srv.PingTimeout)*time.Millisecond)
-			Logger.Infof("websocket received pong: %s", ping.Id)
 			if err != nil {
 				return
 			}
@@ -344,14 +332,11 @@ func (conn *WebsocketConn) read() (err error) {
 				continue
 			case WebsocketError:
 				err = fmt.Errorf(string(resp.Data))
-				Logger.Infof("websocket received error message: %s", err)
 				return
 			case WebsocketPong:
 				go conn.cancelWait(conn.pp, resp.Id)
-				Logger.Infof("websocket received pong message: %s", resp.Id)
 			case WebsocketAck:
 				go conn.cancelWait(conn.ack, resp.Id)
-				Logger.Infof("websocket received ack message: %s", resp.Id)
 			case WebsocketMessage, WebsocketCommand, WebsocketNotice:
 				conn.r <- resp.Data
 			default:
@@ -377,7 +362,6 @@ func (conn *WebsocketConn) write() (err error) {
 			if err != nil {
 				return
 			}
-			Logger.Infof("write message to websocket connect: %s", string(v))
 			err = conn.conn.WriteMessage(websocket.TextMessage, v)
 			if err != nil {
 				return
@@ -401,7 +385,6 @@ func (conn *WebsocketConn) Listen(handler func(conn *WebsocketConn, buffer *byte
 			err = handler(conn, bytes.NewBuffer(data))
 		}
 		if err != nil {
-			Logger.Error("websocket runtime error: %s", err.Error())
 			return
 		}
 	}

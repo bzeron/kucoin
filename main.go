@@ -12,6 +12,16 @@ import (
 	order_book "github.com/bzeron/mk/order-book"
 )
 
+var client *kucoin.Client
+
+func init() {
+	var err error
+	client, err = kucoin.NewClient(kucoin.WithEndpoint("https://api.kcs.top"))
+	if err != nil {
+		panic(err)
+	}
+}
+
 type Message struct {
 	Sequence     order_book.Sequence `json:"sequence"`
 	Side         string              `json:"side"`
@@ -23,10 +33,6 @@ type Message struct {
 	MakerOrderId string              `json:"makerOrderId"`
 	NewSize      string              `json:"newSize"`
 }
-
-var (
-	client = kucoin.NewClient(kucoin.WithEndpoint("https://api.kcs.top"))
-)
 
 func snapshot() (book *order_book.BookL3, err error) {
 	var query = url.Values{}
@@ -46,7 +52,24 @@ func snapshot() (book *order_book.BookL3, err error) {
 	return
 }
 
-func printBook(book *order_book.BookL2) {
+func printBookL2(book *order_book.BookL2) {
+	level := 10
+	var i = 1
+	for ; i <= level*2+1; i++ {
+		fmt.Printf("\033[%dA", i)
+		fmt.Printf("\033[K")
+	}
+	asks, bids := book.Object(level)
+	for _, v := range asks {
+		fmt.Println(v)
+	}
+	fmt.Println("-------------------------------")
+	for _, v := range bids {
+		fmt.Println(v)
+	}
+}
+
+func printBookL3(book *order_book.BookL3) {
 	level := 10
 	var i = 1
 	for ; i <= level*2+1; i++ {
@@ -83,7 +106,8 @@ func main() {
 	go func() {
 		fmt.Print("\033[2J")
 		for {
-			printBook(book.ToL2())
+			//printBookL2(book.ToL2())
+			printBookL3(book)
 			time.Sleep(time.Second / 10)
 		}
 	}()

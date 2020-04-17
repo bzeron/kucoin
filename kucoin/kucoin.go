@@ -24,21 +24,32 @@ var (
 	}
 )
 
-type Option func(client *Client)
+type Option func(client *Client) (err error)
 
-func WithAuth(key, secret, passphrase string) func(client *Client) {
-	s, _ := newSign(key, secret, passphrase)
-	return func(client *Client) {
+func WithAuth(key, secret, passphrase string) Option {
+	return func(client *Client) (err error) {
 		client.key = key
 		client.secret = secret
 		client.passphrase = passphrase
-		client.sign = s
+		client.sign, err = newSign(key, secret, passphrase)
+		return
 	}
 }
 
-func WithEndpoint(endpoint string) func(client *Client) {
-	return func(client *Client) {
-		client.endpoint, _ = url.Parse(endpoint)
+func WithEndpoint(endpoint string) Option {
+	return func(client *Client) (err error) {
+		client.endpoint, err = url.Parse(endpoint)
+		return
+	}
+}
+
+func WithDefaultEndpoint(endpoint string) Option {
+	return func(client *Client) (err error) {
+		client.endpoint = &url.URL{
+			Scheme: "https",
+			Host:   "api.kucoin.com",
+		}
+		return
 	}
 }
 
@@ -50,15 +61,12 @@ type Client struct {
 	sign       *sign
 }
 
-func NewClient(options ...Option) (client *Client) {
+func NewClient(options ...Option) (client *Client, err error) {
 	client = &Client{}
 	for _, option := range options {
-		option(client)
-	}
-	if client.endpoint == nil {
-		client.endpoint = &url.URL{
-			Scheme: "https",
-			Host:   "api.kucoin.com",
+		err = option(client)
+		if err != nil {
+			return
 		}
 	}
 	return
@@ -75,16 +83,14 @@ func (c *Client) Send(call *CallRequest) (buf *bytes.Buffer, err error) {
 	if err != nil {
 		return
 	}
-	Logger.Infof("api request method: %s, url: %s, header: %v", request.Method, request.URL.String(), request.Header)
 	var response *http.Response
 	response, err = HttpDefaultClient.Do(request)
 	if err != nil {
 		return
 	}
 	defer func() { _ = response.Body.Close() }()
-	Logger.Infof("api response status code: %d", response.StatusCode)
 	if response.StatusCode != http.StatusOK {
-		err = fmt.Errorf("api response http error: [code:%d, message:%s]", response.StatusCode, http.StatusText(response.StatusCode))
+		err = fmt.Errorf("http error: [code:%d, message:%s]", response.StatusCode, http.StatusText(response.StatusCode))
 		return
 	}
 	var resp callResponse
@@ -92,9 +98,8 @@ func (c *Client) Send(call *CallRequest) (buf *bytes.Buffer, err error) {
 	if err != nil {
 		return
 	}
-	Logger.Infof("api response code: %s", resp.Code)
 	if resp.Code != ApiResponseSuccess {
-		err = fmt.Errorf("api response system error: [code:%s, message:%s]", resp.Code, resp.Data)
+		err = fmt.Errorf("api error: [code:%s, message:%s]", resp.Code, resp.Data)
 		return
 	}
 	buf = bytes.NewBuffer(resp.Data)

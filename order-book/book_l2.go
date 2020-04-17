@@ -16,7 +16,7 @@ func NewSideL2(tree *rbt.Tree) *SideL2 {
 	return &SideL2{tree: tree}
 }
 
-func (side *SideL2) math(price decimal.Decimal, math func(decimal.Decimal) decimal.Decimal) {
+func (side *SideL2) math(price decimal.Decimal, math func(oldSize decimal.Decimal) (newSize decimal.Decimal)) {
 	order := &OrderL2{Price: price}
 	v, found := side.tree.Get(order)
 	if found {
@@ -30,15 +30,15 @@ func (side *SideL2) math(price decimal.Decimal, math func(decimal.Decimal) decim
 	}
 }
 
-func (side *SideL2) Add(price, newSize decimal.Decimal) {
-	side.math(price, func(d decimal.Decimal) decimal.Decimal {
-		return d.Add(newSize)
+func (side *SideL2) Add(price, size decimal.Decimal) {
+	side.math(price, func(oldSize decimal.Decimal) (newSize decimal.Decimal) {
+		return oldSize.Add(size)
 	})
 }
 
-func (side *SideL2) Sub(price, newSize decimal.Decimal) {
-	side.math(price, func(d decimal.Decimal) decimal.Decimal {
-		return d.Sub(newSize)
+func (side *SideL2) Sub(price, size decimal.Decimal) {
+	side.math(price, func(oldSize decimal.Decimal) (newSize decimal.Decimal) {
+		return oldSize.Sub(size)
 	})
 }
 
