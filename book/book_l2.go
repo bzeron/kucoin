@@ -1,4 +1,4 @@
-package order_book
+package book
 
 import (
 	"time"
@@ -8,15 +8,15 @@ import (
 	rbt "github.com/emirpasic/gods/trees/redblacktree"
 )
 
-type SideL2 struct {
+type sideL2 struct {
 	tree *rbt.Tree
 }
 
-func NewSideL2(tree *rbt.Tree) *SideL2 {
-	return &SideL2{tree: tree}
+func newSideL2(tree *rbt.Tree) *sideL2 {
+	return &sideL2{tree: tree}
 }
 
-func (side *SideL2) math(price decimal.Decimal, math func(oldSize decimal.Decimal) (newSize decimal.Decimal)) {
+func (side *sideL2) math(price decimal.Decimal, math func(oldSize decimal.Decimal) (newSize decimal.Decimal)) {
 	order := &OrderL2{Price: price}
 	v, found := side.tree.Get(order)
 	if found {
@@ -30,30 +30,34 @@ func (side *SideL2) math(price decimal.Decimal, math func(oldSize decimal.Decima
 	}
 }
 
-func (side *SideL2) Add(price, size decimal.Decimal) {
+func (side *sideL2) add(price, size decimal.Decimal) {
 	side.math(price, func(oldSize decimal.Decimal) (newSize decimal.Decimal) {
 		return oldSize.Add(size)
 	})
 }
 
-func (side *SideL2) Sub(price, size decimal.Decimal) {
+func (side *sideL2) sub(price, size decimal.Decimal) {
 	side.math(price, func(oldSize decimal.Decimal) (newSize decimal.Decimal) {
 		return oldSize.Sub(size)
 	})
 }
 
+func (side *sideL2) iterator() rbt.Iterator {
+	return side.tree.Iterator()
+}
+
 type BookL2 struct {
 	Sequence Sequence `json:"sequence"`
-	Bids     *SideL2  `json:"bids"`
-	Asks     *SideL2  `json:"asks"`
+	Bids     *sideL2  `json:"bids"`
+	Asks     *sideL2  `json:"asks"`
 	Time     int64    `json:"time"`
 }
 
 func NewBookL2() (book *BookL2) {
 	return &BookL2{
 		Sequence: 0,
-		Asks:     NewSideL2(rbt.NewWith(orderL2AsksCmp)),
-		Bids:     NewSideL2(rbt.NewWith(orderL2BidsCmp)),
+		Asks:     newSideL2(rbt.NewWith(orderL2AsksCmp)),
+		Bids:     newSideL2(rbt.NewWith(orderL2BidsCmp)),
 		Time:     time.Now().UnixNano(),
 	}
 }
@@ -62,11 +66,11 @@ func (book *BookL2) Object(level int) (asks, bids []interface{}) {
 	var i, j int
 	asks = make([]interface{}, level)
 	bids = make([]interface{}, level)
-	asksIterator := book.Asks.tree.Iterator()
+	asksIterator := book.Asks.iterator()
 	for ; asksIterator.Next() && i < level; i++ {
 		asks[level-i-1] = asksIterator.Value()
 	}
-	bidsIterator := book.Bids.tree.Iterator()
+	bidsIterator := book.Bids.iterator()
 	for ; bidsIterator.Next() && j < level; j++ {
 		bids[j] = bidsIterator.Value()
 	}

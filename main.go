@@ -3,16 +3,24 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
 	"time"
 
+	"github.com/bzeron/mk/book"
+
 	"github.com/bzeron/mk/kucoin"
-	order_book "github.com/bzeron/mk/order-book"
 )
 
-var client *kucoin.Client
+var (
+	client *kucoin.Client
+
+	clTerm = "\033[2J"
+	upTerm = "\033[%dA"
+	deTerm = "\033[K"
+)
 
 func init() {
 	var err error
@@ -22,19 +30,7 @@ func init() {
 	}
 }
 
-type Message struct {
-	Sequence     order_book.Sequence `json:"sequence"`
-	Side         string              `json:"side"`
-	Type         string              `json:"type"`
-	Size         string              `json:"size"`
-	OrderId      string              `json:"orderId"`
-	Price        string              `json:"price"`
-	Time         string              `json:"time"`
-	MakerOrderId string              `json:"makerOrderId"`
-	NewSize      string              `json:"newSize"`
-}
-
-func snapshot() (book *order_book.BookL3, err error) {
+func snapshot() (l3 *book.BookL3, err error) {
 	var query = url.Values{}
 	query.Set("symbol", "BTC-USDT")
 	var request *kucoin.CallRequest
@@ -47,19 +43,19 @@ func snapshot() (book *order_book.BookL3, err error) {
 	if err != nil {
 		return
 	}
-	book = order_book.NewBookL3()
-	err = json.NewDecoder(buffer).Decode(&book)
+	l3 = book.NewBookL3()
+	err = json.NewDecoder(buffer).Decode(&l3)
 	return
 }
 
-func printBookL2(book *order_book.BookL2) {
+func printBookL2(l2 *book.BookL2) {
 	level := 10
 	var i = 1
 	for ; i <= level*2+1; i++ {
-		fmt.Printf("\033[%dA", i)
-		fmt.Printf("\033[K")
+		fmt.Printf(upTerm, i)
+		fmt.Printf(deTerm)
 	}
-	asks, bids := book.Object(level)
+	asks, bids := l2.Object(level)
 	for _, v := range asks {
 		fmt.Println(v)
 	}
@@ -69,14 +65,14 @@ func printBookL2(book *order_book.BookL2) {
 	}
 }
 
-func printBookL3(book *order_book.BookL3) {
+func printBookL3(l3 *book.BookL3) {
 	level := 10
 	var i = 1
 	for ; i <= level*2+1; i++ {
-		fmt.Printf("\033[%dA", i)
-		fmt.Printf("\033[K")
+		fmt.Printf(upTerm, i)
+		fmt.Printf(deTerm)
 	}
-	asks, bids := book.Object(level)
+	asks, bids := l3.Object(level)
 	for _, v := range asks {
 		fmt.Println(v)
 	}
@@ -84,9 +80,74 @@ func printBookL3(book *order_book.BookL3) {
 	for _, v := range bids {
 		fmt.Println(v)
 	}
+}
+
+func printBook(isL2 bool, l3 *book.BookL3) {
+	fmt.Printf(clTerm)
+	if isL2 {
+		for {
+			printBookL2(l3.ToL2())
+			time.Sleep(time.Second / 10)
+		}
+	} else {
+		for {
+			printBookL3(l3)
+			time.Sleep(time.Second / 10)
+		}
+	}
+}
+
+type Message struct {
+	Sequence     book.Sequence `json:"sequence"`
+	Side         string        `json:"side"`
+	Type         string        `json:"type"`
+	Size         string        `json:"size"`
+	OrderId      string        `json:"orderId"`
+	Price        string        `json:"price"`
+	Time         string        `json:"time"`
+	MakerOrderId string        `json:"makerOrderId"`
+	NewSize      string        `json:"newSize"`
+}
+
+func event(l3 *book.BookL3, msg Message) (err error) {
+	l3.SetSequence(msg.Sequence)
+	switch msg.Type {
+	case "received":
+	case "open":
+		err = l3.Add(msg.OrderId, msg.Side, msg.Price, msg.Size, msg.Time)
+	case "done":
+		l3.Del(msg.OrderId)
+	case "change":
+		err = l3.NewSize(msg.OrderId, msg.NewSize)
+	case "match":
+		err = l3.SubSize(msg.MakerOrderId, msg.Size)
+	}
+	return
+}
+
+func eventWithBookL3(l3 *book.BookL3) func(conn *kucoin.WebsocketConn, buffer *bytes.Buffer) (err error) {
+	return func(conn *kucoin.WebsocketConn, buffer *bytes.Buffer) (err error) {
+		var msg Message
+		err = json.NewDecoder(buffer).Decode(&msg)
+		if err != nil {
+			return
+		}
+		switch {
+		case msg.Sequence == l3.GetSequence()+1:
+			err = event(l3, msg)
+		case msg.Sequence <= l3.GetSequence():
+		case msg.Sequence > l3.GetSequence():
+			l3, err = snapshot()
+		}
+		return
+	}
+
 }
 
 func main() {
+	var isL2 bool
+	isL2 = *flag.Bool("l2", false, "l2 default l3")
+	flag.Parse()
 	token, err := client.PublicToken()
 	if err != nil {
 		panic(err)
@@ -99,56 +160,12 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	book, err := snapshot()
+	l3, err := snapshot()
 	if err != nil {
 		panic(err)
 	}
-	go func() {
-		fmt.Print("\033[2J")
-		for {
-			//printBookL2(book.ToL2())
-			printBookL3(book)
-			time.Sleep(time.Second / 10)
-		}
-	}()
-	err = conn.Listen(func(conn *kucoin.WebsocketConn, buffer *bytes.Buffer) (err error) {
-		var msg Message
-		err = json.NewDecoder(buffer).Decode(&msg)
-		if err != nil {
-			return
-		}
-		switch {
-		case msg.Sequence == book.GetSequence()+1:
-			book.SetSequence(msg.Sequence)
-			switch msg.Type {
-			case "received":
-			case "open":
-				err = book.Add(msg.OrderId, msg.Side, msg.Price, msg.Size, msg.Time)
-				if err != nil {
-					return
-				}
-			case "done":
-				book.Del(msg.OrderId)
-			case "change":
-				err = book.NewSize(msg.OrderId, msg.NewSize)
-				if err != nil {
-					return
-				}
-			case "match":
-				err = book.SubSize(msg.MakerOrderId, msg.Size)
-				if err != nil {
-					return
-				}
-			}
-		case msg.Sequence <= book.GetSequence():
-		case msg.Sequence > book.GetSequence():
-			book, err = snapshot()
-			if err != nil {
-				return
-			}
-		}
-		return
-	})
+	go printBook(isL2, l3)
+	err = conn.Listen(eventWithBookL3(l3))
 	if err != nil {
 		panic(err)
 	}

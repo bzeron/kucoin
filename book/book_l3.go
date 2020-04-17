@@ -1,4 +1,4 @@
-package order_book
+package book
 
 import (
 	"encoding/json"
@@ -10,32 +10,32 @@ import (
 	rbt "github.com/emirpasic/gods/trees/redblacktree"
 )
 
-type SideL3 struct {
+type sideL3 struct {
 	name   string
 	tree   *rbt.Tree
 	orders map[string]*OrderL3
 }
 
-func NewSideL3(name string, tree *rbt.Tree, orders map[string]*OrderL3) *SideL3 {
-	return &SideL3{
+func newSideL3(name string, tree *rbt.Tree, orders map[string]*OrderL3) *sideL3 {
+	return &sideL3{
 		name:   name,
 		tree:   tree,
 		orders: orders,
 	}
 }
 
-func (side *SideL3) Put(o *OrderL3) {
+func (side *sideL3) put(o *OrderL3) {
 	side.orders[o.Id] = o
 	side.tree.Put(o, o)
 }
 
-func (side *SideL3) Del(o *OrderL3) {
+func (side *sideL3) del(o *OrderL3) {
 	delete(side.orders, o.Id)
 	side.tree.Remove(o)
 	return
 }
 
-func (side *SideL3) Update(o *OrderL3) {
+func (side *sideL3) update(o *OrderL3) {
 	v, found := side.tree.Get(o)
 	if !found {
 		return
@@ -47,7 +47,11 @@ func (side *SideL3) Update(o *OrderL3) {
 	}
 }
 
-func (side *SideL3) UnmarshalJSON(b []byte) (err error) {
+func (side *sideL3) iterator() rbt.Iterator {
+	return side.tree.Iterator()
+}
+
+func (side *sideL3) UnmarshalJSON(b []byte) (err error) {
 	var s [][4]string
 	err = json.Unmarshal(b, &s)
 	if err != nil {
@@ -59,7 +63,7 @@ func (side *SideL3) UnmarshalJSON(b []byte) (err error) {
 		if err != nil {
 			return
 		}
-		side.Put(order)
+		side.put(order)
 	}
 	return
 }
@@ -69,8 +73,8 @@ type BookL3 struct {
 	orders map[string]*OrderL3
 
 	Sequence Sequence `json:"sequence"`
-	Bids     *SideL3  `json:"bids"`
-	Asks     *SideL3  `json:"asks"`
+	Bids     *sideL3  `json:"bids"`
+	Asks     *sideL3  `json:"asks"`
 	Time     int64    `json:"time"`
 }
 
@@ -79,8 +83,8 @@ func NewBookL3() (book *BookL3) {
 	return &BookL3{
 		orders:   orders,
 		Sequence: 0,
-		Asks:     NewSideL3(Asks, rbt.NewWith(orderL3AsksCmp), orders),
-		Bids:     NewSideL3(Bids, rbt.NewWith(orderL3BidsCmp), orders),
+		Asks:     newSideL3(Asks, rbt.NewWith(orderL3AsksCmp), orders),
+		Bids:     newSideL3(Bids, rbt.NewWith(orderL3BidsCmp), orders),
 		Time:     time.Now().UnixNano(),
 	}
 }
@@ -110,9 +114,9 @@ func (book *BookL3) Add(id, side, price, size, timestamp string) (err error) {
 	}
 	switch order.Side {
 	case Bids:
-		book.Bids.Put(order)
+		book.Bids.put(order)
 	case Asks:
-		book.Asks.Put(order)
+		book.Asks.put(order)
 	}
 	return
 }
@@ -126,9 +130,9 @@ func (book *BookL3) Del(orderId string) {
 	}
 	switch order.Side {
 	case Bids:
-		book.Bids.Del(order)
+		book.Bids.del(order)
 	case Asks:
-		book.Asks.Del(order)
+		book.Asks.del(order)
 	}
 }
 
@@ -155,15 +159,15 @@ func (book *BookL3) NewSize(orderId, newSize string) (err error) {
 	switch order.Side {
 	case Bids:
 		if order.Size.IsZero() {
-			book.Bids.Del(order)
+			book.Bids.del(order)
 		} else {
-			book.Bids.Update(order)
+			book.Bids.update(order)
 		}
 	case Asks:
 		if order.Size.IsZero() {
-			book.Asks.Del(order)
+			book.Asks.del(order)
 		} else {
-			book.Asks.Update(order)
+			book.Asks.update(order)
 		}
 	}
 	return
@@ -187,15 +191,15 @@ func (book *BookL3) SubSize(orderId, subSize string) (err error) {
 	switch order.Side {
 	case Bids:
 		if order.Size.IsZero() {
-			book.Bids.Del(order)
+			book.Bids.del(order)
 		} else {
-			book.Bids.Update(order)
+			book.Bids.update(order)
 		}
 	case Asks:
 		if order.Size.IsZero() {
-			book.Asks.Del(order)
+			book.Asks.del(order)
 		} else {
-			book.Asks.Update(order)
+			book.Asks.update(order)
 		}
 	}
 	return
@@ -207,11 +211,11 @@ func (book *BookL3) Object(level int) (asks, bids []interface{}) {
 	var i, j int
 	asks = make([]interface{}, level)
 	bids = make([]interface{}, level)
-	asksIterator := book.Asks.tree.Iterator()
+	asksIterator := book.Asks.iterator()
 	for ; asksIterator.Next() && i < level; i++ {
 		asks[level-i-1] = asksIterator.Value()
 	}
-	bidsIterator := book.Bids.tree.Iterator()
+	bidsIterator := book.Bids.iterator()
 	for ; bidsIterator.Next() && j < level; j++ {
 		bids[j] = bidsIterator.Value()
 	}
@@ -224,15 +228,15 @@ func (book *BookL3) ToL2() (bookL2 *BookL2) {
 	bookL2 = NewBookL2()
 	bookL2.Sequence = book.Sequence
 	bookL2.Time = book.Time
-	asksIterator := book.Asks.tree.Iterator()
+	asksIterator := book.Asks.iterator()
 	for asksIterator.Next() {
 		order := asksIterator.Value().(*OrderL3)
-		bookL2.Asks.Add(order.Price, order.Size)
+		bookL2.Asks.add(order.Price, order.Size)
 	}
-	bidsIterator := book.Bids.tree.Iterator()
+	bidsIterator := book.Bids.iterator()
 	for bidsIterator.Next() {
 		order := bidsIterator.Value().(*OrderL3)
-		bookL2.Bids.Add(order.Price, order.Size)
+		bookL2.Bids.add(order.Price, order.Size)
 	}
 	return
 }

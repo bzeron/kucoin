@@ -1,4 +1,4 @@
-package order_book
+package book
 
 const (
 	Asks = "sell"
