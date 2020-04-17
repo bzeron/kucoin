@@ -11,6 +11,8 @@ import (
 
 	"github.com/bzeron/mk/book"
 
+	_ "net/http/pprof"
+
 	"github.com/bzeron/mk/kucoin"
 )
 
@@ -87,12 +89,12 @@ func printBook(isL2 bool, l3 *book.BookL3) {
 	if isL2 {
 		for {
 			printBookL2(l3.ToL2())
-			time.Sleep(time.Second / 10)
+			time.Sleep(time.Second / 100)
 		}
 	} else {
 		for {
 			printBookL3(l3)
-			time.Sleep(time.Second / 10)
+			time.Sleep(time.Second / 100)
 		}
 	}
 }
@@ -145,9 +147,18 @@ func eventWithBookL3(l3 *book.BookL3) func(conn *kucoin.WebsocketConn, buffer *b
 }
 
 func main() {
-	var isL2 bool
-	isL2 = *flag.Bool("l2", false, "l2 default l3")
+	var isL2, pprof bool
+	flag.BoolVar(&isL2, "l2", false, "l2 default l3")
+	flag.BoolVar(&pprof, "pprof", false, "pprof enable")
 	flag.Parse()
+	if pprof {
+		go func() {
+			err := http.ListenAndServe(":8000", nil)
+			if err != nil {
+				panic(err)
+			}
+		}()
+	}
 	token, err := client.PublicToken()
 	if err != nil {
 		panic(err)
