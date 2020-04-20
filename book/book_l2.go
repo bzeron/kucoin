@@ -46,15 +46,15 @@ func (side *sideL2) iterator() rbt.Iterator {
 	return side.tree.Iterator()
 }
 
-type BookL2 struct {
+type L2 struct {
 	Sequence Sequence `json:"sequence"`
 	Bids     *sideL2  `json:"bids"`
 	Asks     *sideL2  `json:"asks"`
 	Time     int64    `json:"time"`
 }
 
-func NewBookL2() (book *BookL2) {
-	return &BookL2{
+func NewL2() (book *L2) {
+	return &L2{
 		Sequence: 0,
 		Asks:     newSideL2(rbt.NewWith(orderL2AsksCmp)),
 		Bids:     newSideL2(rbt.NewWith(orderL2BidsCmp)),
@@ -62,7 +62,7 @@ func NewBookL2() (book *BookL2) {
 	}
 }
 
-func (book *BookL2) Object(level int) (asks, bids []interface{}) {
+func (book *L2) Object(level int) (asks, bids []interface{}) {
 	var i, j int
 	asks = make([]interface{}, level)
 	bids = make([]interface{}, level)

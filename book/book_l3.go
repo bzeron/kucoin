@@ -68,7 +68,7 @@ func (side *sideL3) UnmarshalJSON(b []byte) (err error) {
 	return
 }
 
-type BookL3 struct {
+type L3 struct {
 	m      sync.RWMutex
 	orders map[string]*OrderL3
 
@@ -78,9 +78,9 @@ type BookL3 struct {
 	Time     int64    `json:"time"`
 }
 
-func NewBookL3() (book *BookL3) {
+func NewL3() (book *L3) {
 	orders := make(map[string]*OrderL3)
-	return &BookL3{
+	return &L3{
 		orders:   orders,
 		Sequence: 0,
 		Asks:     newSideL3(Asks, rbt.NewWith(orderL3AsksCmp), orders),
@@ -89,19 +89,19 @@ func NewBookL3() (book *BookL3) {
 	}
 }
 
-func (book *BookL3) GetSequence() Sequence {
+func (book *L3) GetSequence() Sequence {
 	book.m.RLock()
 	defer book.m.RUnlock()
 	return book.Sequence
 }
 
-func (book *BookL3) SetSequence(s Sequence) {
+func (book *L3) SetSequence(s Sequence) {
 	book.m.Lock()
 	defer book.m.Unlock()
 	book.Sequence = s
 }
 
-func (book *BookL3) Add(id, side, price, size, timestamp string) (err error) {
+func (book *L3) Add(id, side, price, size, timestamp string) (err error) {
 	book.m.Lock()
 	defer book.m.Unlock()
 	if size == "0" || price == "" {
@@ -121,7 +121,7 @@ func (book *BookL3) Add(id, side, price, size, timestamp string) (err error) {
 	return
 }
 
-func (book *BookL3) Del(orderId string) {
+func (book *L3) Del(orderId string) {
 	book.m.Lock()
 	defer book.m.Unlock()
 	order, found := book.orders[orderId]
@@ -136,14 +136,14 @@ func (book *BookL3) Del(orderId string) {
 	}
 }
 
-func (book *BookL3) Get(orderId string) (order *OrderL3, found bool) {
+func (book *L3) Get(orderId string) (order *OrderL3, found bool) {
 	book.m.RLock()
 	defer book.m.RUnlock()
 	order, found = book.orders[orderId]
 	return
 }
 
-func (book *BookL3) NewSize(orderId, newSize string) (err error) {
+func (book *L3) NewSize(orderId, newSize string) (err error) {
 	book.m.Lock()
 	defer book.m.Unlock()
 	var order *OrderL3
@@ -173,7 +173,7 @@ func (book *BookL3) NewSize(orderId, newSize string) (err error) {
 	return
 }
 
-func (book *BookL3) SubSize(orderId, subSize string) (err error) {
+func (book *L3) SubSize(orderId, subSize string) (err error) {
 	book.m.Lock()
 	defer book.m.Unlock()
 	var order *OrderL3
@@ -205,7 +205,7 @@ func (book *BookL3) SubSize(orderId, subSize string) (err error) {
 	return
 }
 
-func (book *BookL3) Object(level int) (asks, bids []interface{}) {
+func (book *L3) Object(level int) (asks, bids []interface{}) {
 	book.m.RLock()
 	defer book.m.RUnlock()
 	var i, j int
@@ -222,10 +222,10 @@ func (book *BookL3) Object(level int) (asks, bids []interface{}) {
 	return
 }
 
-func (book *BookL3) ToL2() (bookL2 *BookL2) {
+func (book *L3) ToL2() (bookL2 *L2) {
 	book.m.RLock()
 	defer book.m.RUnlock()
-	bookL2 = NewBookL2()
+	bookL2 = NewL2()
 	bookL2.Sequence = book.Sequence
 	bookL2.Time = book.Time
 	asksIterator := book.Asks.iterator()

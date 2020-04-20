@@ -6,12 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 	"net/url"
 	"time"
 
 	"github.com/bzeron/mk/book"
-
-	_ "net/http/pprof"
 
 	"github.com/bzeron/mk/kucoin"
 )
@@ -32,7 +31,7 @@ func init() {
 	}
 }
 
-func snapshot() (l3 *book.BookL3, err error) {
+func snapshot() (l3 *book.L3, err error) {
 	var query = url.Values{}
 	query.Set("symbol", "BTC-USDT")
 	var request *kucoin.CallRequest
@@ -45,12 +44,12 @@ func snapshot() (l3 *book.BookL3, err error) {
 	if err != nil {
 		return
 	}
-	l3 = book.NewBookL3()
+	l3 = book.NewL3()
 	err = json.NewDecoder(buffer).Decode(&l3)
 	return
 }
 
-func printBookL2(l2 *book.BookL2) {
+func printBookL2(l2 *book.L2) {
 	level := 10
 	var i = 1
 	for ; i <= level*2+1; i++ {
@@ -67,7 +66,7 @@ func printBookL2(l2 *book.BookL2) {
 	}
 }
 
-func printBookL3(l3 *book.BookL3) {
+func printBookL3(l3 *book.L3) {
 	level := 10
 	var i = 1
 	for ; i <= level*2+1; i++ {
@@ -84,18 +83,20 @@ func printBookL3(l3 *book.BookL3) {
 	}
 }
 
-func printBook(isL2 bool, l3 *book.BookL3) {
-	fmt.Printf(clTerm)
-	if isL2 {
+func printBook(printOut string, l3 *book.L3) {
+	switch printOut {
+	case "l2":
+		fmt.Printf(clTerm)
 		for {
 			printBookL2(l3.ToL2())
 			time.Sleep(time.Second / 100)
 		}
-	} else {
+	case "l3":
 		for {
 			printBookL3(l3)
 			time.Sleep(time.Second / 100)
 		}
+	default:
 	}
 }
 
@@ -111,7 +112,7 @@ type Message struct {
 	NewSize      string        `json:"newSize"`
 }
 
-func event(l3 *book.BookL3, msg Message) (err error) {
+func event(l3 *book.L3, msg Message) (err error) {
 	l3.SetSequence(msg.Sequence)
 	switch msg.Type {
 	case "received":
@@ -127,7 +128,7 @@ func event(l3 *book.BookL3, msg Message) (err error) {
 	return
 }
 
-func eventWithBookL3(l3 *book.BookL3) func(conn *kucoin.WebsocketConn, buffer *bytes.Buffer) (err error) {
+func eventWithBookL3(l3 *book.L3) func(conn *kucoin.WebsocketConn, buffer *bytes.Buffer) (err error) {
 	return func(conn *kucoin.WebsocketConn, buffer *bytes.Buffer) (err error) {
 		var msg Message
 		err = json.NewDecoder(buffer).Decode(&msg)
@@ -146,19 +147,28 @@ func eventWithBookL3(l3 *book.BookL3) func(conn *kucoin.WebsocketConn, buffer *b
 
 }
 
-func main() {
-	var isL2, pprof bool
-	flag.BoolVar(&isL2, "l2", false, "l2 default l3")
-	flag.BoolVar(&pprof, "pprof", false, "pprof enable")
-	flag.Parse()
-	if pprof {
-		go func() {
-			err := http.ListenAndServe(":8000", nil)
-			if err != nil {
-				panic(err)
-			}
-		}()
+func pprofServer(enable bool) {
+	if !enable {
+		return
 	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	err := http.ListenAndServe(":8000", mux)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func main() {
+	var printOut string
+	var enablePprof bool
+	flag.StringVar(&printOut, "print", "", "l2 or l3")
+	flag.BoolVar(&enablePprof, "pprof", false, "pprof enable")
+	flag.Parse()
 	token, err := client.PublicToken()
 	if err != nil {
 		panic(err)
@@ -175,7 +185,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	go printBook(isL2, l3)
+	go pprofServer(enablePprof)
+	go printBook(printOut, l3)
 	err = conn.Listen(eventWithBookL3(l3))
 	if err != nil {
 		panic(err)
