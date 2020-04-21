@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 const (
@@ -21,6 +22,7 @@ var (
 			},
 			Proxy: http.ProxyFromEnvironment,
 		},
+		Timeout: time.Second * 10,
 	}
 )
 
@@ -31,7 +33,7 @@ func WithAuth(key, secret, passphrase string) Option {
 		client.key = key
 		client.secret = secret
 		client.passphrase = passphrase
-		client.sign, err = newSign(key, secret, passphrase)
+		client.sign = newSign(key, secret, passphrase)
 		return
 	}
 }
@@ -73,8 +75,9 @@ func NewClient(options ...Option) (client *Client, err error) {
 }
 
 type callResponse struct {
-	Code string          `json:"code"`
-	Data json.RawMessage `json:"data"`
+	Code    string          `json:"code"`
+	Message string          `json:"msg"`
+	Data    json.RawMessage `json:"data"`
 }
 
 func (c *Client) Send(call *CallRequest) (buf *bytes.Buffer, err error) {
@@ -99,7 +102,7 @@ func (c *Client) Send(call *CallRequest) (buf *bytes.Buffer, err error) {
 		return
 	}
 	if resp.Code != ApiResponseSuccess {
-		err = fmt.Errorf("api error: [code:%s, message:%s]", resp.Code, resp.Data)
+		err = fmt.Errorf("api error: [code:%s, message:%s]", resp.Code, resp.Message)
 		return
 	}
 	buf = bytes.NewBuffer(resp.Data)

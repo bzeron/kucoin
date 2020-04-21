@@ -36,12 +36,17 @@ func (c *Client) NewCallRequest(method string, endpoint string, header http.Head
 	}
 	call.header.Set("User-Agent", fmt.Sprintf("KuCoin-Go-SDK/%s", Version))
 	if call.method == http.MethodPost {
-		call.header.Set("Content-Type", "application/json")
+		call.header.Set("Content-Type", "application/json; charset=utf-8")
 	}
 	if body == nil {
 		return
 	}
-	err = json.NewEncoder(call.body).Encode(body)
+	var b []byte
+	b, err = json.Marshal(body)
+	if err != nil {
+		return
+	}
+	_, err = call.body.Write(b)
 	return
 }
 

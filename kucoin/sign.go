@@ -9,33 +9,25 @@ import (
 )
 
 type sign struct {
-	key        *bytes.Buffer
-	secret     *bytes.Buffer
-	passphrase *bytes.Buffer
+	key        string
+	secret     string
+	passphrase string
 }
 
-func newSign(key, secret, passphrase string) (s *sign, err error) {
+func newSign(key, secret, passphrase string) (s *sign) {
 	s = &sign{
-		key:        new(bytes.Buffer),
-		secret:     new(bytes.Buffer),
-		passphrase: new(bytes.Buffer),
+		key:        key,
+		secret:     secret,
+		passphrase: passphrase,
 	}
-	_, err = s.key.WriteString(key)
-	if err != nil {
-		return
-	}
-	_, err = s.secret.WriteString(secret)
-	if err != nil {
-		return
-	}
-	_, err = s.passphrase.WriteString(passphrase)
 	return
 }
 
 func (s *sign) sign(call *CallRequest) (err error) {
-	call.header.Set("KC-API-KEY", s.key.String())
+	call.header.Set("KC-API-KEY", s.key)
+	timestamp := strconv.FormatInt(call.time.UnixNano()/1e6, 10)
 	temp := new(bytes.Buffer)
-	_, err = temp.WriteString(strconv.FormatInt(call.time.UnixNano()/1e6, 10))
+	_, err = temp.WriteString(timestamp)
 	if err != nil {
 		return
 	}
@@ -51,13 +43,14 @@ func (s *sign) sign(call *CallRequest) (err error) {
 	if err != nil {
 		return
 	}
-	hm := hmac.New(sha256.New, s.secret.Bytes())
+	hm := hmac.New(sha256.New, []byte(s.secret))
 	_, err = hm.Write(temp.Bytes())
 	if err != nil {
 		return
 	}
-	call.header.Set("KC-API-SIGN", base64.StdEncoding.EncodeToString(hm.Sum(nil)))
-	call.header.Set("KC-API-TIMESTAMP", strconv.FormatInt(call.time.UnixNano()/1e6, 10))
-	call.header.Set("KC-API-PASSPHRASE", s.passphrase.String())
+	ss := base64.StdEncoding.EncodeToString(hm.Sum(nil))
+	call.header.Set("KC-API-SIGN", ss)
+	call.header.Set("KC-API-TIMESTAMP", timestamp)
+	call.header.Set("KC-API-PASSPHRASE", s.passphrase)
 	return
 }
