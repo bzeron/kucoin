@@ -103,6 +103,13 @@ func (token Token) ConnectToInstance() (conn *WebsocketConn, err error) {
 }
 
 type (
+	Event func(data []byte) (err error)
+
+	message struct {
+		topic string
+		data  []byte
+	}
+
 	WebsocketConn struct {
 		srv    InstanceServer
 		conn   *websocket.Conn
@@ -111,9 +118,10 @@ type (
 		pp     *sync.Map
 		ack    *sync.Map
 		err    chan error
-		r      chan []byte
+		r      chan message
 		w      chan interface{}
 		close  int32
+		events *sync.Map
 	}
 
 	websocketResponse struct {
@@ -149,12 +157,13 @@ func NewConnect(server InstanceServer, token string) (conn *WebsocketConn, err e
 	query.Set("token", token)
 	uri.RawQuery = query.Encode()
 	conn = &WebsocketConn{
-		srv: server,
-		pp:  new(sync.Map),
-		ack: new(sync.Map),
-		err: make(chan error, WebsocketErrorSize),
-		r:   make(chan []byte, WebsocketReadSize),
-		w:   make(chan interface{}, WebsocketWriteSize),
+		srv:    server,
+		pp:     new(sync.Map),
+		ack:    new(sync.Map),
+		err:    make(chan error, WebsocketErrorSize),
+		r:      make(chan message, WebsocketReadSize),
+		w:      make(chan interface{}, WebsocketWriteSize),
+		events: new(sync.Map),
 	}
 	conn.conn, _, err = WebsocketDialer.Dial(uri.String(), nil)
 	if err != nil {
@@ -234,7 +243,8 @@ func (conn *WebsocketConn) cancelWait(pool *sync.Map, id string) {
 	return
 }
 
-func (conn *WebsocketConn) Subscribe(topic, tunnelId string, private, ack bool) (err error) {
+func (conn *WebsocketConn) Subscribe(topic, tunnelId string, private, ack bool, event Event) (err error) {
+	conn.events.Store(topic, event)
 	var subscribe = &websocketRequest{
 		Id:             strconv.FormatInt(time.Now().UnixNano(), 10),
 		Type:           WebsocketMessageSubscribe,
@@ -262,6 +272,7 @@ func (conn *WebsocketConn) Unsubscribe(topic string, private, ack bool) (err err
 	if ack {
 		err = conn.wait(conn.ack, unsubscribe.Id, WebsocketAckTimeout)
 	}
+	conn.events.Delete(topic)
 	return
 }
 
@@ -338,7 +349,7 @@ func (conn *WebsocketConn) read() (err error) {
 			case WebsocketAck:
 				go conn.cancelWait(conn.ack, resp.Id)
 			case WebsocketMessage, WebsocketCommand, WebsocketNotice:
-				conn.r <- resp.Data
+				conn.r <- message{topic: resp.Topic, data: resp.Data}
 			default:
 				err = fmt.Errorf("websocket received invalid message")
 				return
@@ -371,18 +382,22 @@ func (conn *WebsocketConn) write() (err error) {
 	return
 }
 
-func (conn *WebsocketConn) Listen(handler func(conn *WebsocketConn, buffer *bytes.Buffer) (err error)) (err error) {
+func (conn *WebsocketConn) Listen() (err error) {
 	defer func() { _ = conn.Close() }()
 	for !conn.Closed() {
 		select {
 		case <-conn.ctx.Done():
 			err = conn.ctx.Err()
 		case err = <-conn.err:
-		case data, ok := <-conn.r:
+		case msg, ok := <-conn.r:
 			if !ok {
 				return
 			}
-			err = handler(conn, bytes.NewBuffer(data))
+			event, ok := conn.events.Load(msg.topic)
+			if !ok {
+				return
+			}
+			err = event.(Event)(msg.data)
 		}
 		if err != nil {
 			return

@@ -8,16 +8,18 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/bzeron/mk/book"
 
 	"github.com/bzeron/mk/kucoin"
+	_ "github.com/joho/godotenv/autoload"
 )
 
 var (
 	client *kucoin.Client
-
+	symbol = "BTC-USDT"
 	clTerm = "\033[2J"
 	upTerm = "\033[%dA"
 	deTerm = "\033[K"
@@ -25,15 +27,18 @@ var (
 
 func init() {
 	var err error
-	client, err = kucoin.NewClient(kucoin.WithEndpoint("https://api.kcs.top"))
+	client, err = kucoin.NewClient(
+		kucoin.WithEndpoint("https://api.kucoin.com"),
+		kucoin.WithAuth(os.Getenv("KEY"), os.Getenv("SECRET"), os.Getenv("PASSPHRASE")),
+	)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func snapshot() (l3 *book.L3, err error) {
+func snapshot(l3 *book.L3) (err error) {
 	var query = url.Values{}
-	query.Set("symbol", "BTC-USDT")
+	query.Set("symbol", symbol)
 	var request *kucoin.CallRequest
 	request, err = client.NewCallRequest(http.MethodGet, "/api/v1/market/orderbook/level3", nil, query, nil)
 	if err != nil {
@@ -44,7 +49,6 @@ func snapshot() (l3 *book.L3, err error) {
 	if err != nil {
 		return
 	}
-	l3 = book.NewL3()
 	err = json.NewDecoder(buffer).Decode(&l3)
 	return
 }
@@ -128,10 +132,16 @@ func event(l3 *book.L3, msg Message) (err error) {
 	return
 }
 
-func eventWithBookL3(l3 *book.L3) func(conn *kucoin.WebsocketConn, buffer *bytes.Buffer) (err error) {
-	return func(conn *kucoin.WebsocketConn, buffer *bytes.Buffer) (err error) {
+func eventWithBookL3(printOut string) func(data []byte) (err error) {
+	l3 := book.NewL3()
+	err := snapshot(l3)
+	if err != nil {
+		panic(err)
+	}
+	go printBook(printOut, l3)
+	return func(data []byte) (err error) {
 		var msg Message
-		err = json.NewDecoder(buffer).Decode(&msg)
+		err = json.Unmarshal(data, &msg)
 		if err != nil {
 			return
 		}
@@ -140,11 +150,10 @@ func eventWithBookL3(l3 *book.L3) func(conn *kucoin.WebsocketConn, buffer *bytes
 			err = event(l3, msg)
 		case msg.Sequence <= l3.GetSequence():
 		case msg.Sequence > l3.GetSequence():
-			l3, err = snapshot()
+			err = snapshot(l3)
 		}
 		return
 	}
-
 }
 
 func pprofServer(enable bool) {
@@ -169,7 +178,8 @@ func main() {
 	flag.StringVar(&printOut, "print", "", "l2 or l3")
 	flag.BoolVar(&enablePprof, "pprof", false, "pprof enable")
 	flag.Parse()
-	token, err := client.PublicToken()
+	go pprofServer(enablePprof)
+	token, err := client.PrivateToken()
 	if err != nil {
 		panic(err)
 	}
@@ -177,17 +187,11 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	err = conn.Subscribe("/market/level3:BTC-USDT", "", false, true)
+	err = conn.Subscribe(fmt.Sprintf("/market/level3:%s", symbol), "", false, true, eventWithBookL3(printOut))
 	if err != nil {
 		panic(err)
 	}
-	l3, err := snapshot()
-	if err != nil {
-		panic(err)
-	}
-	go pprofServer(enablePprof)
-	go printBook(printOut, l3)
-	err = conn.Listen(eventWithBookL3(l3))
+	err = conn.Listen()
 	if err != nil {
 		panic(err)
 	}
